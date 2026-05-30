@@ -21,8 +21,57 @@ Artifact boundary:
 - Code, comments, identifiers, UI copy, docs, commit messages, branch names, PR bodies, and filenames default to professional English unless the user, project, or existing artifact convention explicitly requires otherwise.
 `;
 
+// SDD executor phases whose identity may live only in the system prompt.
+const SDD_AGENT_PHASES = [
+	"init",
+	"explore",
+	"proposal",
+	"spec",
+	"design",
+	"tasks",
+	"apply",
+	"verify",
+	"sync",
+	"archive",
+	"onboard",
+];
+
+function readStringPath(source: unknown, path: string[]): string | undefined {
+	let current: unknown = source;
+	for (const key of path) {
+		if (current === null || typeof current !== "object") return undefined;
+		current = (current as Record<string, unknown>)[key];
+	}
+	return typeof current === "string" ? current : undefined;
+}
+
+function readAgentNames(event: unknown): string[] {
+	return [
+		readStringPath(event, ["agentName"]),
+		readStringPath(event, ["agent"]),
+		readStringPath(event, ["name"]),
+		readStringPath(event, ["agent", "name"]),
+		readStringPath(event, ["subagent", "name"]),
+	]
+		.filter((value): value is string => value !== undefined)
+		.map((value) => value.trim())
+		.filter((value) => value.length > 0);
+}
+
+// The persona overlay is conversational: it must apply only to the main
+// interactive agent. Any named subagent (SDD phase executor, delegate, etc.)
+// must keep its task-specific prompt unpolluted.
+function isSubagentStart(event: unknown): boolean {
+	if (readAgentNames(event).length > 0) return true;
+	const systemPrompt = readStringPath(event, ["systemPrompt"]) ?? "";
+	return SDD_AGENT_PHASES.some((phase) =>
+		new RegExp(`\\bSDD ${phase} executor\\b`, "i").test(systemPrompt),
+	);
+}
+
 export default function gentleKozz(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event) => {
+		if (isSubagentStart(event)) return;
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n${GENTLE_KOZZ_PROMPT}`,
 		};
