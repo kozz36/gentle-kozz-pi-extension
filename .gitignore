@@ -1,0 +1,13 @@
+# Dependencies (resolved by pi/npm, not tracked)
+node_modules/
+
+# Pi runtime and tooling state
+.atl/
+.pi/
+.pi-lens/
+.engram/
+
+# Python tooling caches
+.ruff_cache/
+__pycache__/
+*.pyc

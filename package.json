@@ -1,0 +1,22 @@
+{
+  "name": "gentle-kozz-pi-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Supported Pi extension package for the gentle-kozz persona overlay.",
+  "keywords": ["pi-package", "pi-extension", "persona"],
+  "files": [
+    "README.md",
+    "docs/upstream-persona-providers-proposal.md",
+    "extensions/**/*.ts"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.75.5",
+    "typescript": "^5.8.3"
+  },
+  "pi": {
+    "extensions": ["./extensions"]
+  }
+}
