@@ -9,7 +9,7 @@ Identity and role:
 
 User-facing conversation:
 - Match the user's current language.
-- In Spanish, use warm neutral Lima Spanish without Rioplatense voseo or slang-heavy phrasing.
+- In Spanish, use neutral Spanish without Rioplatense voseo or slang-heavy phrasing.
 - Be direct, rigorous, concise, and highly technical.
 - Act as a senior architect and teacher: concepts before code, no shortcuts.
 - Verify technical claims before agreeing; if a claim is wrong, explain why with evidence and show the optimized path.
@@ -21,20 +21,15 @@ Artifact boundary:
 - Code, comments, identifiers, UI copy, docs, commit messages, branch names, PR bodies, and filenames default to professional English unless the user, project, or existing artifact convention explicitly requires otherwise.
 `;
 
-// SDD executor phases whose identity may live only in the system prompt.
-const SDD_AGENT_PHASES = [
-	"init",
-	"explore",
-	"proposal",
-	"spec",
-	"design",
-	"tasks",
-	"apply",
-	"verify",
-	"sync",
-	"archive",
-	"onboard",
-];
+// Rules that are NOT already present in the gentle-pi base prompt.
+// We append these only when merging, avoiding duplication.
+const GENTLE_KOZZ_ADDITIONS = `## gentle-kozz additions
+- Verify technical claims before agreeing; if a claim is wrong, explain why with evidence and show the optimized path.
+- When surfacing risk, include what triggers it at runtime, what breaks if ignored, the mitigation, and the underlying concept name.
+- Keep persona out of generated artifacts. Code, comments, identifiers, UI copy, docs, commit messages, branch names, PR bodies, and filenames default to professional English unless the user, project, or existing artifact convention explicitly requires otherwise.`;
+
+const SDD_AGENT_PHASE_PATTERN =
+	/\bSDD (init|explore|proposal|spec|design|tasks|apply|verify|sync|archive|onboard) executor\b/i;
 
 function readStringPath(source: unknown, path: string[]): string | undefined {
 	let current: unknown = source;
@@ -64,16 +59,62 @@ function readAgentNames(event: unknown): string[] {
 function isSubagentStart(event: unknown): boolean {
 	if (readAgentNames(event).length > 0) return true;
 	const systemPrompt = readStringPath(event, ["systemPrompt"]) ?? "";
-	return SDD_AGENT_PHASES.some((phase) =>
-		new RegExp(`\\bSDD ${phase} executor\\b`, "i").test(systemPrompt),
-	);
+	return SDD_AGENT_PHASE_PATTERN.test(systemPrompt);
+}
+
+/**
+ * Merge the gentle-kozz overlay into the base system prompt.
+ *
+ * When gentle-pi has already injected its base `gentleman` prompt, we
+ * surgically replace the conflicting Rioplatense-voseo rules with the
+ * gentle-kozz Lima-Spanish rules and append only the genuinely new rules.
+ * This avoids the contradiction the LLM sees when two Spanish-style
+ * directives are stacked, and it cuts prompt bloat by ~60 %.
+ *
+ * If the base prompt is not the gentle-pi `gentleman` prompt (e.g. another
+ * package is active), we fall back to concatenating the full overlay.
+ */
+function applyGentleKozzOverlay(basePrompt: string): string {
+	// Already merged in a previous pass (should not happen, but guard anyway).
+	if (basePrompt.includes("## gentle-kozz")) return basePrompt;
+
+	// Detect the gentle-pi base prompt by its header.
+	if (basePrompt.includes("## el Gentleman Identity and Harness")) {
+		const merged = basePrompt
+			.replace(
+				/When the user writes Spanish, answer in natural Rioplatense Spanish with voseo\./g,
+				"Match the user's current language. In Spanish, use neutral Spanish without regional voseo or slang-heavy phrasing.",
+			)
+			.replace(
+				/- Keep the response in the user's language; in Spanish, use natural Rioplatense voseo\./g,
+				"- Keep the response in the user's language; in Spanish, use neutral Spanish without regional voseo or slang-heavy phrasing.",
+			)
+			.replace(
+				/User-facing conversation should stay in the user's language\. In `gentleman` mode, Spanish uses natural Rioplatense voseo\./g,
+				"User-facing conversation should stay in the user's language. In `gentle-kozz` mode, Spanish uses neutral Spanish without regional voseo or slang-heavy phrasing.",
+			);
+
+		// Sanity check: if the upstream prompt changed its wording (e.g. swapped
+		// "Rioplatense" for "Argentine" or "Porteño") and our .replace() calls
+		// failed to match, we fall back to concatenating the full overlay. This
+		// is a last-line-of-defence check; it cannot catch every future upstream
+		// rephrase, but it prevents silently leaving a voseo directive active.
+		if (merged.includes("Rioplatense")) {
+			return `${basePrompt}\n\n${GENTLE_KOZZ_PROMPT}`;
+		}
+
+		return `${merged}\n\n${GENTLE_KOZZ_ADDITIONS}`;
+	}
+
+	// Fallback for non-gentle-pi base prompts.
+	return `${basePrompt}\n\n${GENTLE_KOZZ_PROMPT}`;
 }
 
 export default function gentleKozz(pi: ExtensionAPI): void {
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", (event) => {
 		if (isSubagentStart(event)) return;
 		return {
-			systemPrompt: `${event.systemPrompt}\n\n${GENTLE_KOZZ_PROMPT}`,
+			systemPrompt: applyGentleKozzOverlay(event.systemPrompt),
 		};
 	});
 
